@@ -1,0 +1,385 @@
+# Control flow
+
+```{r, include = FALSE}
+source("common.R")
+```
+
+## Introducción
+
+Hay dos herramientas principales para controlar el flujo del código: elecciones (choices) e iteraciones (loops). Elecciones, tales como enunciados `if` y llamadas a `switch()`, te permiten correr diferente código dependiendo de tu input. Iteraciones, tales como `for` y `while`, te permiten correr código de manera repetida, normalmente con opciones cambiantes. Yo espero que ya estés familiarizado con los conceptos básicos de estas funciones, por lo que en este capítulo se cubrirán algunos detalles técnicos y presentar características útiles, pero menos conocidas.  
+
+El sistema de condiciones (mensajes, advertencias y errores), de los cuáles aprenderemos en el Capítulo \@ref(conditions), provee un control de flujo no-local.
+
+### Quiz {-}
+
+¿Quiéres saltarte este capítulo? Está bien, sólo si puedes responder las preguntas de abajo. Puedes encontrar las respuestas al final del capítulo en la sección \@ref(control-flow-answers).
+
+*   ¿Cuál es la diferencia entre `if` y `ifelse()`?
+
+*   En el siguiente código, ¿Cuál será el valor de `y` si `x` es `TRUE`? ¿Qué pasaría si  `x` es `FALSE`? y ¿Qué si `x` es `NA`?
+  
+    ```{r, eval = FALSE}
+    y <- if (x) 3
+    ```
+
+*   ¿Qué regresa `switch("x", x = , y = 2, z = 3)`?
+
+### Outline {-}
+
+* La sección \@ref(choices) explora los detalles de `if`, y después discute sus parientes cercanos `ifelse()` y `switch()`.
+  
+* La sección \@ref(loops) empieza recordándonos la estructura básica de una iteración en R, discute algunas trampas comúnes, y después habla sobre los enunciados relaciones `while` y `repeat`.
+
+## Elecciones
+\indexc{if}
+
+La estructura básica de un enunciadio if en R es el siguiente: 
+
+```{r, eval = FALSE}
+if (condicion) accion_verdadera
+if (condicion) accion_verdadera else accion_falsa
+```
+
+Si `condicion` es `TRUE`, `accion_verdadera` se evalúa; si `condition` es `FALSE`, la accion condicional `accion_falsa` se evalúa. 
+
+Usualmente, las acciones se establecen como enunciados compuestos dentro de `{`:
+
+```{r}
+calificacion <- function(x) {
+  if (x > 90) {
+    "A"
+  } else if (x > 80) {
+    "B"
+  } else if (x > 50) {
+    "C"
+  } else {
+    "F"
+  }
+}
+```
+
+`if` regresa un valor que puede ser asignado a los resultados: 
+
+```{r}
+x1 <- if (TRUE) 1 else 2
+x2 <- if (FALSE) 1 else 2
+
+c(x1, x2)
+```
+
+(Se recomienda asignar el resultado de un enunciado `if` sólo cuando la expresión completa cabe en una sóla línea; de otra manera, puede ser difícil de leer.)
+
+Cuando se utiliza un sólo argumento sin un enunciado 'else', `if` sin pensar (Section \@ref(invisible)) regresa `NULL` si la condición es `FALSE`. Debido a que funciones como `c()` y `paste()` pierden los `NULL` inputs, esto permite una expresión compacta de ciertos idiomas: 
+
+```{r}
+saludo <- function(nombre, cumple = FALSE) {
+  paste0(
+    "Hi ", nombre,
+    if (cumple) " y FELIZ CUMPLE"
+  )
+}
+greet("Maria", FALSE)
+greet("Jaime", TRUE)
+```
+
+### Argumentos inválidos
+
+La `condicion` debería evaluar un sólo argumento `TRUE` o `FALSE`. Casi todos los otros argumentos generarán un error: 
+
+```{r, error = TRUE}
+if ("x") 1
+if (logical()) 1
+if (NA) 1
+```
+
+La expectativa es un vector lógico con una longitud más grande que 1, lo que genera una advertencia:
+
+```{r, include = FALSE}
+Sys.setenv("_R_CHECK_LENGTH_1_CONDITION_" = "false")
+```
+
+```{r}
+if (c(TRUE, FALSE)) 1
+```
+
+A partir de R 3.5.0, gracias a [Henrik Bengtsson](https://github.com/HenrikBengtsson/Wishlist-for-R/issues/38), se puede convertir este error en una configuración del ambiente a través del establecimiento de una variable de ambiente: 
+
+```{r, error = TRUE}
+Sys.setenv("_R_CHECK_LENGTH_1_CONDITION_" = "true")
+if (c(TRUE, FALSE)) 1
+```
+
+Es una buena práctica porque revela un error claro que de otra manera se podría omitir si sólo se mostrara como advertencia.
+
+
+### if con vectores
+\indexc{ifelse()}
+
+Dado que `if` sólo trabaja con un sólo argumento `TRUE` o `FALSE`, te puedes preguntar qué hacer cuando se tiene un vector de valor lógicos. Manejar vectores de valores es trabajo de la función `ifelse()`: una función vectorizada compuesta de los vectores `test`, `yes`, y `no` (que serán reciclados siempre en ese orden):
+
+
+```{r}
+x <- 1:10
+ifelse(x %% 5 == 0, "XXX", as.character(x))
+
+ifelse(x %% 2 == 0, "even", "odd")
+```
+
+Nótese que los valores faltantes serán propagados en el resultado.
+
+Se recomienda utilizar `ifelse()` sólo cuando los vectores `yes` y `no` son del mismo tipo, de otra manera es difícil de predecir el tipo de resultado que se otendrá. Más información para discusión adicional: <https://vctrs.r-lib.org/articles/stability.html#ifelse>
+
+Otro equivalente vectorizado es la función más general `dplyr::case_when()`. Esta utiliza una sintáxis especial para permitir cualquier número de parejas condición-vector: 
+
+```{r}
+dplyr::case_when(
+  x %% 35 == 0 ~ "fizz buzz",
+  x %% 5 == 0 ~ "fizz",
+  x %% 7 == 0 ~ "buzz",
+  is.na(x) ~ "???",
+  TRUE ~ as.character(x)
+)
+```
+
+### El enunciado `switch()` {#switch}
+\indexc{switch()}
+
+Muy relacionado con `if` se encuentra el enunciado `switch()`. Es compacto, con un propósito especial que te permite remplazar código como: 
+
+```{r}
+opcion_x <- function(x) {
+  if (x == "a") {
+    "opcion 1"
+  } else if (x == "b") {
+    "opcion 2" 
+  } else if (x == "c") {
+    "opcion 3"
+  } else {
+    stop("Valor `x` invalido")
+  }
+}
+```
+
+con la opción más precisa: 
+
+```{r}
+opcion_x <- function(x) {
+  switch(x,
+    a = "opcion 1",
+    b = "opcion 2",
+    c = "opcion 3",
+    stop("Valor `x` invalido")
+  )
+}
+```
+
+El último componente de `switch()` siempre debe de mostrar un error, de otra manera los inputs inválidos van a regresar imperceptiblemente `NULL`:
+
+```{r}
+(switch("c", a = 1, b = 2))
+```
+
+Sí múltiples inputs tienen el mismo output, se puede dejar el espacio después del `=` vacío y el input 'caerá' al siguiente valor. Esto se parece al comportamiento del enunciado `switch` en C:
+
+```{r}
+patas <- function(x) {
+  switch(x,
+    vaca = ,
+    caballo = ,
+    perro = 4,
+    humano = ,
+    pollo = 2,
+    planta = 0,
+    stop("Input desconocido")
+  )
+}
+patas("cow")
+patas("dog")
+```
+
+También es posible utilizar `switch()` con un valor numérico `x`, pero es más difícil de leer, y tiene resultados indeseables si `x` no es un número entero. Se recomienda utilizar `switch()` sólo con inputs de caracter.
+
+### Ejercicios
+
+1.  ¿Qué tipo de vector regresa cada una de las siguientes llamadas de `ifelse()`?
+
+    ```{r, eval = FALSE}
+    ifelse(TRUE, 1, "no")
+    ifelse(FALSE, 1, "no")
+    ifelse(NA, 1, "no")
+    ```
+
+    Lee la documentación y escribe las reglas en tus propias palabras.
+
+2.  ¿Por qué funciona el siguiente código? 
+
+    ```{r}
+    x <- 1:10
+    if (length(x)) "no vacío" else "vacío"
+      
+    x <- numeric()
+    if (length(x)) "no vacío" else "vacío"
+    ```
+
+## Iteraciones (Loops)
+\index{loops}
+\index{loops!for@\texttt{for}}
+\indexc{for}
+
+Los`for` loops son utilizados para iterar sobre objetos (items) en un vector. Tienen la siguiente estructura básica:
+
+```{r, eval = FALSE}
+for (item in vector) perform_action
+```
+
+Por cada objeto en `vector`, `perform_action` es llamada una vez: se actualiza el valor de `item` cada vez.
+
+```{r}
+for (i in 1:3) {
+  print(i)
+}
+```
+
+(Cuando se itera sobre un vector de índices, es convencional utilizar nombres de variables muy cortos como `i`, `j`, o `k`.)
+
+Nota: `for` asigna al `item` al ambiente actual, sobreescribiendo cualquier varaible existente con el mismo nombre:
+
+```{r}
+i <- 100
+for (i in 1:3) {}
+i
+```
+
+\indexc{next}
+\indexc{break}
+Hay dos formas de terminar antes un `for` loop:
+
+* `next` termina la iteración que se está corriendoexits the current iteration.
+* `break` termina todo el `for` loop.
+
+```{r}
+for (i in 1:10) {
+  if (i < 3) 
+    next
+
+  print(i)
+  
+  if (i >= 5)
+    break
+}
+```
+
+### Trampas comúnes
+\index{loops!common pitfalls}
+
+Hay tres trampas comúnes de las que se tiene que estar al pendiente cuando se utiliza un `for` loop. Primero, si se está generando información, asegúrate de pre-ubicar el depósito del output. De otra manera, el loop será muy lento: se pueden ver las secciones \@ref(memory-profiling) and \@ref(avoid-copies) para más detalles. La función `vector()` es muy útil aquí-
+
+```{r}
+promedios <- c(1, 50, 20)
+out <- vector("list", length(promedios))
+for (i in 1:length(promedios)) {
+  out[[i]] <- rnorm(10, promedios[[i]])
+}
+```
+
+Después, se debe de estar al pendiente de iterar sobre `1:length(x)`, mismo que fallará de manera poco útil sí `x` tiene un largo de 0:
+
+```{r, error = TRUE}
+promedios <- c()
+out <- vector("list", length(promedios))
+for (i in 1:length(promedios)) {
+  out[[i]] <- rnorm(10, promedios[[i]])
+}
+```
+
+Esto pasa porque `:` trabaja con secuencias tanto incrementales como decrecientes:
+
+```{r}
+1:length(promedios)
+```
+
+Es mejor utilizar `seq_along(x)`. Siempre regresa un valor que tiene el mismo largo que `x`:
+
+```{r}
+seq_along(promedios)
+
+out <- vector("list", length(promedios))
+for (i in seq_along(promedios)) {
+  out[[i]] <- rnorm(10, promedios[[i]])
+}
+```
+
+Finalmente, se puede topar con problemas cuando se itera sobre vectores S3, ya que los loops usualmente 'quita' o 'desmenuza' los atributos:
+
+```{r}
+xs <- as.Date(c("2020-01-01", "2010-01-01"))
+for (x in xs) {
+  print(x)
+}
+```
+
+Trata de solucionarlo mediante el llamado manual de `[[`:
+
+```{r}
+for (i in seq_along(xs)) {
+  print(xs[[i]])
+}
+```
+
+### Otras herramientas importantes {#for-family}
+\indexc{while}
+\indexc{repeat}
+
+Los `for` loops son útiles cuando se conoce desde el principio el conjunto de valores sobre los cuales se va a iterar. Si no se conocen, hay dos herramientas con especificaciones más flexibles:
+
+* `while(condicion) accion`: realiza `accion` cuando `condicion` es `TRUE`.
+
+* `repeat(accion)`: repite `accion` por siempre (por ejemplo: hasta que se topa con un `break`).
+
+R no tiene el equivalente a la sintáxis `realiza {accion} mientras (condicion)` que se puede encontrar en otros lenguajes.
+
+Se puede reescribir cualquier `for` loop y utilizar `while` en su lugar, y se puede reescribir cualquier `while` loop para utilizar `repeat`, pero de manera conversa no es posible. Esto quiere decir que `while` es más flexible que `for`, y `repeat` es más flexible que `while`. Sin embargo, es una buena práctica utilizar la solución menos flexible para un problema, así que siempre que sea posible se debe de utilizar `for`.
+
+Generalmente hablando, no se debería de utilizar los `for` loops para tareas de análisis de datos, debido a que `map()` y `apply()` proveen soluciones menos flexibles a la mayoría de los problemas. Se aprenderá más de esto en el capítulo \@ref(functionals).
+
+### Ejercicios
+
+1.  ¿Por qué este código es exitoso sin errores o advertencias? 
+    
+    ```{r, results = FALSE}
+    x <- numeric()
+    out <- vector("list", length(x))
+    for (i in 1:length(x)) {
+      out[i] <- x[i] ^ 2
+    }
+    out
+    ```
+
+2.  Cuando se evalúa el siguiente código ¿Qué se puede decir acerca del vector que se está iterando? 
+
+    ```{r}
+    xs <- c(1, 2, 3)
+    for (x in xs) {
+      xs <- c(xs, x * 2)
+    }
+    xs
+    ```
+
+3.  ¿Qué dice el siguiente código acerca de cuando el index es actualizado?
+
+    ```{r}
+    for (i in 1:3) {
+      i <- i * 2
+      print(i) 
+    }
+    ```
+
+## Respuestas del quiz {#control-flow-answers}
+
+* `if` trabaja con scalars; `ifelse()` trabaja con vectores. 
+
+* Cuando `x` es `TRUE`, `y` será `3`; cuando `FALSE`, `y` será `NULL`; cuando `NA` entonces el enunciado if presentará un error.
+
+* El enunciado `switch()` utiliza la estructura de 'caída', por lo que regresará 2.
+  See details in Section \@ref(switch).
+
